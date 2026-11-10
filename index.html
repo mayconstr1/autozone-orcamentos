@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#d52b1e">
+<title>Orçamentos AutoZone · Loja 7626</title>
+<link rel="icon" href="logo-autozone.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <img src="logo-autozone.png" alt="AutoZone" class="toplogo">
+  <nav class="tabs">
+    <button type="button" class="tab active" data-view="novo">Novo orçamento</button>
+    <button type="button" class="tab" data-view="historico">Histórico <span id="histCount" class="badge">0</span></button>
+  </nav>
+</header>
+
+<main>
+<section id="view-novo" class="view">
+  <div class="quote-head">
+    <div><small>Orçamento</small><h1 id="quoteNumber">Nº —</h1></div>
+    <div class="quote-date"><small>Data</small><strong id="quoteDate">—</strong></div>
+  </div>
+
+  <details class="card" id="lojaCard">
+    <summary><h2>Vendedor e loja</h2><span class="hint" id="storeHint">—</span></summary>
+    <div class="grid">
+      <label>Nome do vendedor<input id="sellerName" placeholder="Ex.: Maycon Santos" autocomplete="name"></label>
+      <label>Nome da loja<input id="storeName" placeholder="AutoZone loja 7626"></label>
+      <label>Telefone da loja (fica salvo)<input id="storePhone" inputmode="tel" placeholder="(12) 0000-0000"></label>
+      <label>CNPJ (opcional)<input id="storeCnpj" inputmode="numeric" placeholder="00.000.000/0000-00"></label>
+      <label class="full">Endereço da loja (fica salvo)<input id="storeAddress" placeholder="Rua, número · bairro · cidade · UF · CEP"></label>
+    </div>
+    <button type="button" id="saveStore" class="btn dark wide">Salvar vendedor e loja</button>
+    <p class="hint" id="storeStatus" style="margin-top:6px">Preencha e toque em Salvar. Os dados voltam preenchidos da próxima vez.</p>
+  </details>
+
+  <div class="card">
+    <h2>Cliente e veículo</h2>
+    <div class="grid">
+      <label class="full">Nome do cliente<input id="clientName" placeholder="Ex.: Carlos Mendes"></label>
+      <label class="full">Telefone / WhatsApp<input id="clientPhone" inputmode="tel" placeholder="(12) 90000-0000"></label>
+      <label class="full">Placa (opcional)
+        <div class="inline plate-row">
+          <input id="vehPlate" placeholder="ABC1D23" maxlength="8" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase">
+          <button type="button" id="plateSearch" class="btn dark">Buscar</button>
+        </div>
+      </label>
+      <p class="hint full plate-msg" id="plateMsg" role="status" aria-live="polite"></p>
+      <label>Montadora<input id="vehMake" placeholder="Ex.: Ford"></label>
+      <label>Modelo<input id="vehModel" placeholder="Ex.: EcoSport"></label>
+      <label>Ano<input id="vehYear" inputmode="numeric" placeholder="Ex.: 2018"></label>
+      <label>Motorização<input id="vehEngine" placeholder="Ex.: 2.0 Flex"></label>
+      <label class="full">Observações (opcional)<textarea id="notes" rows="2" placeholder="Ex.: cliente vai confirmar amanhã"></textarea></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Itens do orçamento</h2>
+    <div id="items"></div>
+    <button type="button" id="addItem" class="btn ghost wide">+ Adicionar item</button>
+  </div>
+
+  <div class="card">
+    <h2>Valores e pagamento</h2>
+    <div class="grid">
+      <label>Desconto adicional (opcional)
+        <div class="inline">
+          <select id="discType"><option value="pct">%</option><option value="brl">R$</option></select>
+          <input id="discValue" inputmode="decimal" placeholder="0">
+        </div>
+      </label>
+    </div>
+    <div class="pay">
+      <h3>Formas de pagamento</h3>
+      <p class="paylist">Cartão de débito · Cartão de crédito · Pix · Dinheiro</p>
+      <p class="parc" id="parcMain">—</p>
+      <div class="parc-grid" id="parcList"></div>
+    </div>
+    <p class="validade" id="validadeTxt">—</p>
+    <div class="totals">
+      <div><span>Total bruto</span><strong id="tSub">R$ 0,00</strong></div>
+      <div class="eco"><span>Economia</span><strong id="tDisc">R$ 0,00</strong></div>
+      <div class="grand"><span>Total líquido</span><strong id="tTotal">R$ 0,00</strong></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Texto do orçamento</h2>
+    <p class="hint">Texto pronto pra colar no WhatsApp do cliente.</p>
+    <textarea id="quoteText" rows="10" readonly></textarea>
+    <button type="button" id="copyText" class="btn dark wide">Copiar texto</button>
+  </div>
+
+  <div class="actions">
+    <button type="button" id="btnPdf" class="btn primary">Gerar PDF</button>
+    <button type="button" id="btnSave" class="btn ghost">Salvar</button>
+    <button type="button" id="btnNew" class="btn ghost">Novo</button>
+  </div>
+</section>
+
+<section id="view-historico" class="view hidden">
+  <div class="card">
+    <h2>Orçamentos salvos</h2>
+    <input id="histSearch" placeholder="Buscar por cliente, veículo, placa ou nº">
+    <div id="histList"></div>
+  </div>
+</section>
+</main>
+
+<div id="toast" class="toast" role="status"></div>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
