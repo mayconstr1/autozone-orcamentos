@@ -3,8 +3,9 @@
  * GET /api/placa?p=ABC1D23
  * Ponte server-side para um provedor de consulta de placa.
  * Configuração (variáveis de ambiente do projeto na Vercel):
- *   PLATE_PROVIDER = apiplacas | dadosapi
- *   PLATE_API_KEY  = token/chave do provedor (NUNCA vai para o front)
+ *   PLATE_PROVIDER = apiplacas | dadosapi | fraga
+ *   PLATE_API_KEY  = token/chave do provedor (NUNCA vai para o front); no fraga, a senha
+ *   FRAGA_USER     = e-mail da conta do Catálogo Fraga (só para PLATE_PROVIDER=fraga)
  * Resposta normalizada: {placa, marca, modelo, ano, motorizacao, combustivel}
  * Nenhum dado de proprietário, chassi, renavam etc. é devolvido ou guardado.
  */
@@ -142,8 +143,45 @@ const PROVIDERS = {
       if (!out.marca && !out.modelo) throw new ProviderError('not_found', status);
       return out;
     }
+  },
+  // Catálogo Fraga (conta AutoZone) — GraphQL em bff.catalogofraga.com.br, login Keycloak.
+  // Env: PLATE_PROVIDER=fraga, FRAGA_USER=e-mail, PLATE_API_KEY=senha.
+  fraga: {
+    async lookup(placa, key) {
+      const now = Date.now();
+      if (!fragaToken.value || now >= fragaToken.exp) {
+        // shortcut: grant "password" direto; se o Keycloak recusar (unauthorized_client),
+        // trocar por fluxo authorization-code ou credencial de serviço da Fraga.
+        const t = await fetchJson('https://accounts.fraga.com.br/realms/cat_autozone/protocol/openid-connect/token', {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+          body: new URLSearchParams({ grant_type: 'password', client_id: 'catalog-user', scope: 'openid', username: s(process.env.FRAGA_USER), password: key }).toString()
+        });
+        if (t.status !== 200 || !t.body || !t.body.access_token) throw new ProviderError('login:' + s(t.body && t.body.error), t.status);
+        fragaToken = { value: t.body.access_token, exp: now + ((Number(t.body.expires_in) || 60) - 20) * 1000 };
+      }
+      const { status, body } = await fetchJson('https://bff.catalogofraga.com.br/gateway/graphql', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + fragaToken.value, 'Content-Type': 'application/json', Accept: 'application/json', Origin: 'https://autozone.catalogofraga.com.br' },
+        body: JSON.stringify({ operationName: 'GetVehicleByPlate', query: 'query GetVehicleByPlate($plate: String!) { vehicleByPlate(plate: $plate) { brand madeYear models { name engines } } }', variables: { plate: placa } })
+      });
+      if (status === 401) fragaToken = { value: '', exp: 0 };
+      const v = body && body.data && body.data.vehicleByPlate;
+      if (status !== 200 || !body || (body.errors && !v)) throw new ProviderError(body && body.data && body.errors ? 'not_found' : 'provider', status);
+      const m = (v && Array.isArray(v.models) && v.models[0]) || {};
+      const out = clean({
+        placa,
+        marca: niceBrand(v && v.brand),
+        modelo: titleCase(m.name),
+        ano: v && v.madeYear,
+        motorizacao: s(Array.isArray(m.engines) ? m.engines[0] : ''),
+        combustivel: ''
+      });
+      if (!out.marca && !out.modelo) throw new ProviderError('not_found', status);
+      return out;
+    }
   }
 };
+let fragaToken = { value: '', exp: 0 }; // reaproveitado enquanto a instância estiver quente
 
 function send(res, status, obj, extra) {
   res.statusCode = status;
