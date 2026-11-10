@@ -3,9 +3,8 @@
  * GET /api/placa?p=ABC1D23
  * Ponte server-side para um provedor de consulta de placa.
  * Configuração (variáveis de ambiente do projeto na Vercel):
- *   PLATE_PROVIDER = apiplacas | dadosapi | fraga
- *   PLATE_API_KEY  = token/chave do provedor (NUNCA vai para o front); no fraga, a senha
- *   FRAGA_USER     = e-mail da conta do Catálogo Fraga (só para PLATE_PROVIDER=fraga)
+ *   PLATE_PROVIDER = apiplacas | dadosapi
+ *   PLATE_API_KEY  = token/chave do provedor (NUNCA vai para o front)
  * Resposta normalizada: {placa, marca, modelo, ano, motorizacao, combustivel}
  * Nenhum dado de proprietário, chassi, renavam etc. é devolvido ou guardado.
  */
@@ -75,28 +74,6 @@ function unwrap(j) {
   if (j && typeof j === 'object') for (const k of ['data', 'dados', 'resultado', 'result', 'veiculo']) if (j[k] && typeof j[k] === 'object' && !Array.isArray(j[k])) return j[k];
   return j;
 }
-function enginesText(engines) {
-  const list = Array.isArray(engines) ? engines : (engines == null || engines === '' ? [] : [engines]);
-  return list.map(e => (e == null || typeof e === 'object' ? '' : s(e))).filter(Boolean).join(' / ');
-}
-// O script devolve data.vehicleByPlate { brand, madeYear, models[].name/engines }.
-// Não há campo de combustível nessa query: combustivel fica vazio.
-function mapFragaVehicle(placa, payload) {
-  const root = payload && payload.vehicleByPlate !== undefined ? payload : (payload && payload.data) || null;
-  const v = root && root.vehicleByPlate;
-  if (!v || typeof v !== 'object') return null;
-  const model = (Array.isArray(v.models) && v.models[0]) || {};
-  const modeloRaw = s(model.name);
-  const engineRaw = enginesText(model.engines);
-  return clean({
-    placa,
-    marca: niceBrand(v.brand),
-    modelo: titleCase(modeloRaw),
-    ano: v.madeYear,
-    motorizacao: engineRaw || engineFromText(modeloRaw),
-    combustivel: ''
-  });
-}
 
 class ProviderError extends Error { constructor(kind, status) { super(kind); this.kind = kind; this.status = status; } }
 
@@ -165,71 +142,8 @@ const PROVIDERS = {
       if (!out.marca && !out.modelo) throw new ProviderError('not_found', status);
       return out;
     }
-  },
-  // Catálogo Fraga (conta AutoZone) — GraphQL em bff.catalogofraga.com.br, login Keycloak.
-  // Env: PLATE_PROVIDER=fraga, FRAGA_USER=e-mail, PLATE_API_KEY=senha.
-  // A query do script também pede cor e grupos de peça; aqui só vai o veículo.
-  fraga: {
-    async lookup(placa, key) {
-      let refreshed = false;
-      for (;;) {
-        const token = await fragaAccessToken(key);
-        const { status, body } = await fragaGraphql(placa, token);
-        if (status === 401 && !refreshed) { resetFragaToken(); refreshed = true; continue; }
-        if (status === 401 || status === 403) { resetFragaToken(); throw new ProviderError('auth', status); }
-        if (status !== 200 || !body) throw new ProviderError('provider', status);
-        const out = mapFragaVehicle(placa, body);
-        if (!out || (!out.marca && !out.modelo)) throw new ProviderError('not_found', status);
-        return out;
-      }
-    }
   }
 };
-
-const FRAGA_TOKEN_URL = 'https://accounts.fraga.com.br/realms/cat_autozone/protocol/openid-connect/token';
-const FRAGA_GRAPHQL_URL = 'https://bff.catalogofraga.com.br/gateway/graphql';
-const FRAGA_ORIGIN = 'https://autozone.catalogofraga.com.br';
-// Mesmos campos de veículo do script (GetVehicleByPlate). Sem cor e sem catálogo de peças.
-const FRAGA_QUERY = 'query GetVehicleByPlate($plate: String!) { vehicleByPlate(plate: $plate) { brand madeYear models { name engines } } }';
-const fragaToken = { value: '', exp: 0 };
-
-function resetFragaToken() { fragaToken.value = ''; fragaToken.exp = 0; }
-
-async function fragaAccessToken(password) {
-  const now = Date.now();
-  if (fragaToken.value && now < fragaToken.exp) return fragaToken.value;
-  const user = s(process.env.FRAGA_USER);
-  if (!user || !s(password)) throw new ProviderError('auth', 0);
-  // shortcut: grant "password" direto; se o Keycloak recusar (unauthorized_client),
-  // trocar por fluxo authorization-code ou credencial de serviço da Fraga.
-  const t = await fetchJson(FRAGA_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body: new URLSearchParams({
-      grant_type: 'password', client_id: 'catalog-user', scope: 'openid', username: user, password: password
-    }).toString()
-  });
-  if (t.status !== 200 || !t.body || !t.body.access_token) { resetFragaToken(); throw new ProviderError('auth', t.status); }
-  const ttl = Number(t.body.expires_in);
-  const life = Number.isFinite(ttl) && ttl > 1 ? ttl : 60;
-  const skew = life > 21 ? 20 : 1;
-  fragaToken.value = t.body.access_token;
-  fragaToken.exp = now + (life - skew) * 1000;
-  return fragaToken.value;
-}
-
-async function fragaGraphql(placa, token) {
-  return fetchJson(FRAGA_GRAPHQL_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + token,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      Origin: FRAGA_ORIGIN
-    },
-    body: JSON.stringify({ operationName: 'GetVehicleByPlate', query: FRAGA_QUERY, variables: { plate: placa } })
-  });
-}
 
 function send(res, status, obj, extra) {
   res.statusCode = status;
@@ -250,7 +164,7 @@ async function handler(req, res) {
   const providerName = s(process.env.PLATE_PROVIDER).toLowerCase();
   const key = s(process.env.PLATE_API_KEY);
   const provider = PROVIDERS[providerName];
-  if (!provider || !key || (providerName === 'fraga' && !s(process.env.FRAGA_USER))) return send(res, 503, { error: 'busca por placa não configurada', code: 'not_configured' });
+  if (!provider || !key) return send(res, 503, { error: 'busca por placa não configurada', code: 'not_configured' });
 
   const wait = rateLimited(clientIp(req));
   if (wait) return send(res, 429, { error: 'Muitas buscas seguidas. Aguarde um minuto e tente de novo.', code: 'rate_limited' }, { 'Retry-After': String(wait) });
@@ -262,15 +176,11 @@ async function handler(req, res) {
     const kind = e && e.kind;
     if (kind === 'not_found') return send(res, 404, { error: 'Placa não encontrada.', code: 'not_found' });
     if (kind === 'invalid') return send(res, 400, { error: 'Placa inválida. Use o formato ABC1234 ou ABC1D23.', code: 'invalid_plate' });
-    if (kind === 'auth') {
-      console.error('placa: provider error', providerName, (e && e.status) || '', 'auth');
-      return send(res, 502, { error: 'Não foi possível autenticar a consulta de placa. Tente novamente em instantes.', code: 'provider_error' });
-    }
-    // log mínimo, sem chave, usuário nem corpo da resposta do provedor
+    // log mínimo, sem chave nem corpo da resposta do provedor
     console.error('placa: provider error', providerName, (e && e.status) || '', kind || 'exception');
     return send(res, 502, { error: 'Não foi possível consultar a placa agora. Tente novamente em instantes.', code: 'provider_error' });
   }
 }
 
 module.exports = handler;
-module.exports._internals = { normalizePlate, isValidPlate, rateLimited, hits, PROVIDERS, engineFromCc, engineFromText, niceBrand, fuelNice, RATE_LIMIT, mapFragaVehicle, resetFragaToken, fragaToken };
+module.exports._internals = { normalizePlate, isValidPlate, rateLimited, hits, PROVIDERS, engineFromCc, engineFromText, niceBrand, fuelNice, RATE_LIMIT };
