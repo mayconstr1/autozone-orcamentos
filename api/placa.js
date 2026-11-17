@@ -5,6 +5,8 @@
  * Configuração (variáveis de ambiente do projeto na Vercel):
  *   PLATE_PROVIDER = apiplacas | dadosapi
  *   PLATE_API_KEY  = token/chave do provedor (NUNCA vai para o front)
+ *   UPSTASH_REDIS_REST_URL   = URL REST do Upstash Redis (contador de rate limit persistente)
+ *   UPSTASH_REDIS_REST_TOKEN = token do Upstash Redis (opcional; sem eles cai no contador local)
  * Resposta normalizada: {placa, marca, modelo, ano, motorizacao, combustivel}
  * Nenhum dado de proprietário, chassi, renavam etc. é devolvido ou guardado.
  */
@@ -12,7 +14,9 @@
 const RATE_LIMIT = 10;          // consultas por IP
 const RATE_WINDOW_MS = 60000;   // por minuto
 const TIMEOUT_MS = 8000;
-const hits = new Map();         // memória da instância (limite simples, best-effort)
+const UPSTASH_URL = String(process.env.UPSTASH_REDIS_REST_URL || '').trim();
+const UPSTASH_TOKEN = String(process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+const hits = new Map();         // memória da instância (fallback local, best-effort)
 
 const OLD_RE = /^[A-Z]{3}[0-9]{4}$/;          // AAA9999
 const MERCOSUL_RE = /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/; // AAA9A99
@@ -24,15 +28,46 @@ function isValidPlate(p) { return OLD_RE.test(p) || MERCOSUL_RE.test(p); }
 
 function clientIp(req) {
   const h = (req && req.headers) || {};
+  // Na Vercel, x-vercel-forwarded-for é definido pela borda e não pode ser forjado pelo cliente.
+  const vf = String(h['x-vercel-forwarded-for'] || '').split(',')[0].trim();
+  if (vf) return vf;
   const xf = String(h['x-forwarded-for'] || '').split(',')[0].trim();
   return xf || String(h['x-real-ip'] || '') || (req.socket && req.socket.remoteAddress) || 'unknown';
 }
-function rateLimited(ip, now = Date.now()) {
+
+// Fallback local: janela fixa por instância (o limite real vira RATE_LIMIT x nº de instâncias).
+function rateLimitedLocal(ip, now = Date.now()) {
   if (hits.size > 5000) { for (const [k, v] of hits) if (now - v.start > RATE_WINDOW_MS) hits.delete(k); }
   let e = hits.get(ip);
   if (!e || now - e.start > RATE_WINDOW_MS) { e = { start: now, count: 0 }; hits.set(ip, e); }
   e.count++;
   return e.count > RATE_LIMIT ? Math.ceil((e.start + RATE_WINDOW_MS - now) / 1000) : 0;
+}
+
+// Contador persistente via Upstash Redis REST (compartilhado entre instâncias serverless).
+// INCR + EXPIRE NX reproduz a janela fixa do fallback local. Em falha, devolve null.
+async function rateLimitedKv(ip) {
+  const key = 'rl:placa:' + ip;
+  const ttl = Math.ceil(RATE_WINDOW_MS / 1000);
+  const res = await fetch(UPSTASH_URL, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + UPSTASH_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify([['INCR', key], ['EXPIRE', key, ttl, 'NX']]),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  const json = await res.json().catch(() => null);
+  const arr = Array.isArray(json) ? json : [json];
+  const count = arr[0] && typeof arr[0].result === 'number' ? arr[0].result : null;
+  if (count == null) return null;
+  return count > RATE_LIMIT ? ttl : 0;
+}
+
+async function rateLimited(ip, now = Date.now()) {
+  if (UPSTASH_URL && UPSTASH_TOKEN) {
+    const wait = await rateLimitedKv(ip);
+    if (wait != null) return wait; // se o KV falhar, cai no fallback local
+  }
+  return rateLimitedLocal(ip, now);
 }
 
 /* ---------- helpers de normalização ---------- */
@@ -166,7 +201,7 @@ async function handler(req, res) {
   const provider = PROVIDERS[providerName];
   if (!provider || !key) return send(res, 503, { error: 'busca por placa não configurada', code: 'not_configured' });
 
-  const wait = rateLimited(clientIp(req));
+  const wait = await rateLimited(clientIp(req));
   if (wait) return send(res, 429, { error: 'Muitas buscas seguidas. Aguarde um minuto e tente de novo.', code: 'rate_limited' }, { 'Retry-After': String(wait) });
 
   try {
@@ -183,4 +218,4 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
-module.exports._internals = { normalizePlate, isValidPlate, rateLimited, hits, PROVIDERS, engineFromCc, engineFromText, niceBrand, fuelNice, RATE_LIMIT };
+module.exports._internals = { normalizePlate, isValidPlate, rateLimited, rateLimitedLocal, rateLimitedKv, hits, PROVIDERS, engineFromCc, engineFromText, niceBrand, fuelNice, RATE_LIMIT };
