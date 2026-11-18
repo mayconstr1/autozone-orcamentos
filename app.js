@@ -50,42 +50,63 @@ function calc(qq=q){
 
 /* ---------- form binding ---------- */
 const storeFields=['sellerName','storeName','storePhone','storeCnpj','storeAddress'];
-const qFields={clientName:['client','name'],clientPhone:['client','phone'],vehMake:['vehicle','make'],vehModel:['vehicle','model'],vehYear:['vehicle','year'],vehEngine:['vehicle','engine'],vehPlate:['vehicle','plate'],notes:['notes'],discType:['discType'],discValue:['discValue']};
+const qFields={clientName:['client','name'],clientPhone:['client','phone'],vehMake:['vehicle','make'],vehModel:['vehicle','model'],vehYear:['vehicle','year'],vehEngine:['vehicle','engine'],notes:['notes'],discType:['discType'],discValue:['discValue']};
 const getP=(o,p)=>p.length===1?o[p[0]]:o[p[0]][p[1]];
 const setP=(o,p,v)=>{if(p.length===1)o[p[0]]=v;else o[p[0]][p[1]]=v};
 
 function fillForm(){
-  storeFields.forEach(f=>$('#'+f).value=store[f]||'');
-  Object.entries(qFields).forEach(([id,p])=>$('#'+id).value=getP(q,p)??'');
+  storeFields.forEach(f=>{const el=$('#'+f);if(el)el.value=store[f]||''});
+  Object.entries(qFields).forEach(([id,p])=>{const el=$('#'+id);if(el)el.value=getP(q,p)??''});
   $('#quoteNumber').textContent='Nº '+qNum(q.number);
   $('#quoteDate').textContent=fmtDate(q.createdAt);
   renderItems();refresh();updStoreHint();
-  if(!store.sellerName)$('#lojaCard').open=true;
 }
-storeFields.forEach(f=>$('#'+f).addEventListener('input',e=>{store[f]=e.target.value;storeDirty(true);refresh()}));
-function storeDirty(d){const b=$('#saveStore');if(d){b.textContent='Salvar vendedor e loja';b.classList.remove('ok');$('#storeStatus').textContent='Alterações ainda não salvas.'}updStoreHint()}
-function updStoreHint(){const sv=load(LS.store,null);$('#storeHint').textContent=sv&&sv.sellerName?('Vendedor: '+sv.sellerName):'toque para preencher'}
+storeFields.forEach(f=>{const el=$('#'+f);if(el)el.addEventListener('input',e=>{store[f]=e.target.value;storeDirty(true);refresh()})});
+function storeDirty(d){const b=$('#saveStore');if(d){b.textContent='Salvar vendedor e loja';b.classList.remove('ok');$('#storeStatus').textContent='Alterações de vendedor/loja ainda não salvas.'}updStoreHint()}
+function updStoreHint(){const sv=load(LS.store,null);$('#storeHint').textContent=sv&&sv.sellerName?('Vendedor salvo: '+sv.sellerName):'Dados da loja'}
 $('#saveStore').addEventListener('click',()=>{store=Object.fromEntries(storeFields.map(f=>[f,$('#'+f).value.trim()]));save(LS.store,store);storeFields.forEach(f=>$('#'+f).value=store[f]);const b=$('#saveStore');b.textContent='Salvo ✓';b.classList.add('ok');$('#storeStatus').textContent='Salvo neste aparelho. Da próxima vez já aparece preenchido.';updStoreHint();refresh();toast('Vendedor e loja salvos')});
-Object.entries(qFields).forEach(([id,p])=>$('#'+id).addEventListener('input',e=>{let v=e.target.value;if(id==='vehPlate')v=v.toUpperCase();setP(q,p,v);refresh()}));
+Object.entries(qFields).forEach(([id,p])=>{const el=$('#'+id);if(el)el.addEventListener('input',e=>{setP(q,p,e.target.value);refresh()})});
 $('#discType').addEventListener('change',e=>{q.discType=e.target.value;refresh()});
+
+const TRASH_SVG='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>';
+const BOX_SVG='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 
 function renderItems(){
   const box=$('#items');
   box.innerHTML=q.items.map((it,i)=>`
   <div class="item" data-i="${i}">
-    <div class="item-head"><strong>Item ${i+1}</strong>${q.items.length>1?`<button type="button" class="rm" data-rm="${i}" aria-label="Remover item ${i+1}">Remover</button>`:''}</div>
-    <div class="grid">
-      <label>SKU / código<input data-f="sku" value="${esc(it.sku)}" inputmode="numeric" placeholder="Ex.: 100105260"></label>
-      <label class="g2">Descrição<input data-f="desc" value="${esc(it.desc)}" placeholder="Ex.: Pastilha de freio dianteira"></label>
-      <label>Marca<input data-f="brand" value="${esc(it.brand)}" placeholder="Ex.: Bosch"></label>
-      <label>Disponibilidade<select data-f="avail"><option value="estoque"${it.avail==='estoque'?' selected':''}>Em estoque</option><option value="encomenda"${it.avail==='encomenda'?' selected':''}>Encomenda</option></select></label>
-      <label>Qtd<input data-f="qty" value="${esc(it.qty)}" inputmode="numeric" type="number" min="1" step="1"></label>
-      <label>Preço bruto (un.)<input data-f="gross" value="${esc(it.gross)}" inputmode="decimal" placeholder="0,00"></label>
-      <label>Preço líquido (un.)<input data-f="net" value="${esc(it.net)}" inputmode="decimal" placeholder="= bruto"></label>
-      <label>Desconto %<input data-f="disc" value="${esc(it.disc)}" inputmode="decimal" placeholder="0"></label>
+    <div class="item-head">
+      <div class="item-title-wrap">
+        <span class="item-num">${i+1}</span>
+        <strong class="item-title">Item comercial</strong>
+        <label class="item-sku-inline" title="Código ou SKU (opcional)">
+          <span>SKU/Cód.:</span>
+          <input data-f="sku" value="${esc(it.sku)}" inputmode="numeric" placeholder="Opcional">
+        </label>
+      </div>
+      ${q.items.length>1?`<button type="button" class="rm-icon" data-rm="${i}" aria-label="Remover item ${i+1}" title="Remover item">${TRASH_SVG}</button>`:''}
     </div>
-    <div class="item-price" data-pr="${i}"></div>
-    <div class="item-sub">Subtotal: <strong data-sub="${i}">R$ 0,00</strong></div>
+    <div class="grid-item-row1">
+      <label>TIPO DO ITEM<input data-f="desc" value="${esc(it.desc)}" placeholder="Ex.: Pastilha"></label>
+      <label>MARCA<input data-f="brand" value="${esc(it.brand)}" placeholder="Ex.: Bosch"></label>
+      <label>DISPONIBILIDADE<select data-f="avail"><option value="estoque"${it.avail==='estoque'?' selected':''}>Estoque</option><option value="encomenda"${it.avail==='encomenda'?' selected':''}>Encomenda</option></select></label>
+    </div>
+    <div class="grid-item-row2">
+      <label>QUANTIDADE<input data-f="qty" value="${esc(it.qty)}" inputmode="numeric" type="number" min="1" step="1"></label>
+      <label>VALOR BRUTO<input data-f="gross" value="${esc(it.gross)}" inputmode="decimal" placeholder="0,00"></label>
+      <label>VALOR LÍQUIDO<input data-f="net" value="${esc(it.net)}" inputmode="decimal" placeholder="0,00"></label>
+    </div>
+    <div class="item-foot">
+      <span class="item-avail-badge" data-avlbl="${i}">${BOX_SVG}<span>${it.avail==='encomenda'?'Sob encomenda':'Disponível em estoque'}</span></span>
+      <div class="item-metrics">
+        <span class="item-price" data-pr="${i}"></span>
+        <label class="item-disc-inline">
+          <span>Desconto %:</span>
+          <input data-f="disc" value="${esc(it.disc)}" inputmode="decimal" placeholder="0,0">
+        </label>
+        <span class="item-sub">Líquido: <strong data-sub="${i}">R$ 0,00</strong></span>
+      </div>
+    </div>
   </div>`).join('');
 }
 $('#items').addEventListener('input',e=>{const f=e.target.dataset.f;if(!f)return;const box=e.target.closest('.item'),i=+box.dataset.i,it=q.items[i]=normItem(q.items[i]);it[f]=e.target.value;
@@ -94,13 +115,13 @@ $('#items').addEventListener('input',e=>{const f=e.target.dataset.f;if(!f)return
   else if(f==='disc'){it.lastEdit='disc';const d=Math.min(100,Math.max(0,num(it.disc)));setIn('net',String(it.disc).trim()===''?'':fmtIn(g*(1-d/100)))}
   else if(f==='gross'){if(it.lastEdit==='disc'&&String(it.disc).trim()!==''){setIn('net',fmtIn(g*(1-Math.min(100,num(it.disc))/100)))}else if(String(it.net).trim()!==''){setIn('disc',g?fmtPct(Math.max(0,(g-num(it.net))/g*100)):'')}}
   refresh()});
-$('#items').addEventListener('change',e=>{const f=e.target.dataset.f;if(f==='avail'){const i=+e.target.closest('.item').dataset.i;q.items[i].avail=e.target.value;refresh()}});
-$('#items').addEventListener('click',e=>{const r=e.target.dataset.rm;if(r==null)return;q.items.splice(+r,1);renderItems();refresh()});
-$('#addItem').addEventListener('click',()=>{q.items.push(newItem());renderItems();refresh();const last=$('#items .item:last-child input');last&&last.focus()});
+$('#items').addEventListener('change',e=>{const f=e.target.dataset.f;if(f==='avail'){const box=e.target.closest('.item'),i=+box.dataset.i;q.items[i].avail=e.target.value;const av=box.querySelector(`[data-avlbl="${i}"] span`);if(av)av.textContent=e.target.value==='encomenda'?'Sob encomenda':'Disponível em estoque';refresh()}});
+$('#items').addEventListener('click',e=>{const btn=e.target.closest('[data-rm]');if(!btn)return;const r=btn.dataset.rm;if(r==null)return;q.items.splice(+r,1);renderItems();refresh()});
+$('#addItem').addEventListener('click',()=>{q.items.push(newItem());renderItems();refresh();const last=$('#items .item:last-child input[data-f="desc"]');if(last){last.scrollIntoView({behavior:'smooth',block:'nearest'});last.focus()}});
 
 function refresh(){
   const c=calc();
-  c.lines.forEach((l,i)=>{const el=document.querySelector(`[data-sub="${i}"]`);if(el)el.textContent=brl(l.net);const pe=document.querySelector(`[data-pr="${i}"]`);if(pe)pe.innerHTML=l.g?(l.d>0.004?`De <s>${brl(l.g)}</s> por <b>${brl(l.n)}</b> <span class="off">${fmtPct(l.d)}% de desconto</span>`:`Preço: <b>${brl(l.n)}</b> <span class="off zero">0% de desconto</span>`):''});
+  c.lines.forEach((l,i)=>{const el=document.querySelector(`[data-sub="${i}"]`);if(el)el.textContent=brl(l.net);const pe=document.querySelector(`[data-pr="${i}"]`);if(pe)pe.innerHTML=l.g?(l.d>0.004?`De <s>${brl(l.g)}</s> por <b>${brl(l.n)}</b> <span class="off">${fmtPct(l.d)}% off</span>`:`<span class="off zero">Desconto: 0,0%</span>`):''});
   $('#tSub').textContent=brl(c.sub);$('#tDisc').textContent=c.disc>0.004?'- '+brl(c.disc)+' ('+fmtPct(c.sub?c.disc/c.sub*100:0)+'%)':brl(0);$('#tTotal').textContent=brl(c.total);
   const P=parcelas(c.total);
   $('#parcMain').textContent=c.total>0?'Em até '+P.best.n+'x de '+brl(P.best.value)+' sem juros'+(P.best.exact?'':' (1ª de '+brl(P.best.first)+')'):'Adicione itens para ver as parcelas';
@@ -110,9 +131,9 @@ function refresh(){
   save(LS.draft,q);
 }
 
-/* ---------- texto ---------- */
+/* ---------- texto (sem imprimir placa) ---------- */
 function engineStr(v){const e=String(v.engine||'').trim();return e&&!String(v.model||'').toLowerCase().includes(e.toLowerCase())?e:''}
-function vehicleStr(qq=q){const v=qq.vehicle||{};return [v.make,v.model,engineStr(v),v.year].filter(s=>String(s||'').trim()).join(' ')+(v.plate?` (placa ${v.plate})`:'')}
+function vehicleStr(qq=q){const v=qq.vehicle||{};return [v.make,v.model,engineStr(v),v.year].filter(s=>String(s||'').trim()).join(' ')}
 function firstName(n){return String(n||'').trim().split(/\s+/)[0]||''}
 function hello(){const h=new Date().getHours();return h<12?'Bom dia':h<18?'Boa tarde':'Boa noite'}
 function buildText(qq=q){
@@ -182,7 +203,7 @@ $('#histList').addEventListener('click',async e=>{
 function show(v){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.view===v));$('#view-novo').classList.toggle('hidden',v!=='novo');$('#view-historico').classList.toggle('hidden',v!=='historico');if(v==='historico')renderHist()}
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>show(t.dataset.view)));
 
-/* ---------- PDF ---------- */
+/* ---------- PDF (sem linha de Placa) ---------- */
 let logoData=null;
 async function getLogo(){
   if(logoData)return logoData;
@@ -206,8 +227,8 @@ async function buildPdf(qq){
   doc.setFontSize(10);doc.setTextColor(40);doc.text('Nº '+qNum(qq.number),R,y-3,{align:'right'});
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text('Data de emissão: '+fmtDate(qq.createdAt)+'   ·   Válido somente nesta data',R,y+2,{align:'right'});
   y+=7;
-  // info box
-  const info=[['Cliente',qq.client.name],['Telefone',qq.client.phone],['Veículo',[qq.vehicle.make,qq.vehicle.model,qq.vehicle.year].filter(Boolean).join(' ')],['Motorização',qq.vehicle.engine],['Placa',qq.vehicle.plate],['Vendedor',store.sellerName]].filter(x=>String(x[1]||'').trim());
+  // info box (sem Placa)
+  const info=[['Cliente',qq.client.name],['Telefone',qq.client.phone],['Veículo',[qq.vehicle.make,qq.vehicle.model,qq.vehicle.year].filter(Boolean).join(' ')],['Motorização',qq.vehicle.engine],['Vendedor',store.sellerName]].filter(x=>String(x[1]||'').trim());
   if(info.length){
     const rows=Math.ceil(info.length/2),bh=rows*6+4;
     doc.setFillColor(255,246,236);doc.setDrawColor(240,215,190);doc.setLineWidth(.3);doc.roundedRect(M,y,R-M,bh,2,2,'FD');
@@ -263,32 +284,6 @@ $('#btnPdf').addEventListener('click',async()=>{
   const c=calc();if(!c.lines.some(l=>l.desc||l.g)){toast('Adicione pelo menos um item');return}
   persist(true);await makePdf(q);
 });
-
-/* ---------- busca por placa ---------- */
-const PLATE_RE=/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/;
-const normPlate=v=>String(v||'').toUpperCase().replace(/[\s\-.]/g,'');
-function plateMsg(m,kind){const el=$('#plateMsg');el.textContent=m||'';el.className='hint full plate-msg'+(kind?' '+kind:'')}
-const PLATE_ERR={invalid_plate:'Placa inválida. Use o formato ABC1234 ou ABC1D23.',not_configured:'A busca por placa ainda não foi configurada. Preencha os dados do veículo manualmente.',not_found:'Não encontramos essa placa. Confira a digitação ou preencha manualmente.',rate_limited:'Muitas buscas seguidas. Aguarde um minuto e tente de novo.',provider_error:'O serviço de placas não respondeu agora. Tente de novo em instantes ou preencha manualmente.',network:'Sem conexão com o serviço de placas. Verifique a internet ou preencha manualmente.'};
-async function searchPlate(){
-  const btn=$('#plateSearch'),inp=$('#vehPlate'),pl=normPlate(inp.value);
-  inp.value=pl;q.vehicle.plate=pl;refresh();
-  if(!PLATE_RE.test(pl)){plateMsg(PLATE_ERR.invalid_plate,'err');inp.focus();return}
-  btn.disabled=true;btn.textContent='Buscando…';plateMsg('Buscando dados do veículo…');
-  try{
-    let r,j=null;
-    try{r=await fetch('/api/placa?p='+encodeURIComponent(pl),{headers:{Accept:'application/json'},cache:'no-store'})}catch(e){plateMsg(PLATE_ERR.network,'err');return}
-    try{j=await r.json()}catch(e){j=null}
-    if(!r.ok||!j||j.code){const code=(j&&j.code)||(r.status===404?'not_found':r.status===429?'rate_limited':r.status===503?'not_configured':r.status===400?'invalid_plate':'provider_error');plateMsg(PLATE_ERR[code]||PLATE_ERR.provider_error,'err');return}
-    const eng=[j.motorizacao,j.combustivel].map(s=>String(s||'').trim()).filter(Boolean).join(' ');
-    const map=[['vehMake',j.marca],['vehModel',j.modelo],['vehYear',j.ano],['vehEngine',eng]];
-    let n=0;map.forEach(([id,v])=>{v=String(v||'').trim();if(!v)return;$('#'+id).value=v;setP(q,qFields[id],v);n++});
-    refresh();
-    plateMsg(n?'Dados preenchidos pela placa. Confira e ajuste se precisar.':PLATE_ERR.not_found,n?'ok':'err');
-  }finally{btn.disabled=false;btn.textContent='Buscar'}
-}
-$('#plateSearch').addEventListener('click',searchPlate);
-$('#vehPlate').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchPlate()}});
-$('#vehPlate').addEventListener('input',()=>plateMsg(''));
 
 fillForm();renderHist();
 })();
