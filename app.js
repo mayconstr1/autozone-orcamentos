@@ -50,7 +50,7 @@ function calc(qq=q){
 
 /* ---------- form binding ---------- */
 const storeFields=['sellerName','storeName','storePhone','storeCnpj','storeAddress'];
-const qFields={clientName:['client','name'],clientPhone:['client','phone'],vehMake:['vehicle','make'],vehModel:['vehicle','model'],vehYear:['vehicle','year'],vehEngine:['vehicle','engine'],notes:['notes'],discType:['discType'],discValue:['discValue']};
+const qFields={clientName:['client','name'],vehMake:['vehicle','make'],vehModel:['vehicle','model'],vehYear:['vehicle','year'],vehEngine:['vehicle','engine'],notes:['notes'],discType:['discType'],discValue:['discValue']};
 const getP=(o,p)=>p.length===1?o[p[0]]:o[p[0]][p[1]];
 const setP=(o,p,v)=>{if(p.length===1)o[p[0]]=v;else o[p[0]][p[1]]=v};
 
@@ -228,7 +228,7 @@ async function buildPdf(qq){
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text('Data de emissão: '+fmtDate(qq.createdAt)+'   ·   Válido somente nesta data',R,y+2,{align:'right'});
   y+=7;
   // info box (sem Placa)
-  const info=[['Cliente',qq.client.name],['Telefone',qq.client.phone],['Veículo',[qq.vehicle.make,qq.vehicle.model,qq.vehicle.year].filter(Boolean).join(' ')],['Motorização',qq.vehicle.engine],['Vendedor',store.sellerName]].filter(x=>String(x[1]||'').trim());
+  const info=[['Cliente',qq.client.name],['Veículo',[qq.vehicle.make,qq.vehicle.model,qq.vehicle.year].filter(Boolean).join(' ')],['Motorização',qq.vehicle.engine],['Vendedor',store.sellerName]].filter(x=>String(x[1]||'').trim());
   if(info.length){
     const rows=Math.ceil(info.length/2),bh=rows*6+4;
     doc.setFillColor(255,246,236);doc.setDrawColor(240,215,190);doc.setLineWidth(.3);doc.roundedRect(M,y,R-M,bh,2,2,'FD');
